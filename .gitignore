@@ -10,3 +10,7 @@ venv/
 results/karsilastirma_*.png
 results/sonuclar_*.json
 results/sonuclar_*.md
+
+# İndirilen gerçek veri setleri (büyük dosyalar; bkz. veri/README.md)
+veri/*
+!veri/README.md
