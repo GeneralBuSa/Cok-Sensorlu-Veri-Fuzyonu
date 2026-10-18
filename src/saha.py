@@ -22,6 +22,7 @@ class Hedef:
     dost: bool
     zaman: np.ndarray = field(repr=False)     # (N,)
     konum: np.ndarray = field(repr=False)     # (N, 2)
+    kritik_boyut: float = 1.0                 # m; kameranın tespit menzilini belirler (Johnson)
 
     def konum_at(self, t):
         """t anındaki gerçek konumu doğrusal ara değerleme ile döndürür."""
@@ -53,31 +54,41 @@ def _yumusak_gecis(t, t0, t1, a, b):
     return a + (b - a) * (t - t0) / (t1 - t0)
 
 
+# Kameranın tespit menzili için hedeflerin kritik boyutu (m). Araç için NATO'nun
+# 2.3 m x 2.3 m standart araç hedefi esas alınmıştır; insan grubu (yan yana
+# yürüyen 2-3 kişi) ve İHA değerleri varsayımdır.
+KRITIK_BOYUT = {"araç": 2.3, "insan_grubu": 1.6, "iha": 0.5}
+
+# İnsan grubu hızı: Moussaïd ve ark. (2010, PLoS ONE 5(4): e10047) düşük
+# yoğunlukta hız ≈ 1.26 - 0.04 x (grup büyüklüğü) m/s buluyor; 3 kişi için 1.14 m/s.
+INSAN_GRUBU_HIZI = 1.15
+
+
 def hedefleri_olustur():
     """Senaryodaki beş hedefi (2'si dost) oluşturur."""
     tanimlar = [
         # Düz rota, sabit hız
-        dict(hid=1, ad="Araç-1", dost=False, baslangic=(1500, 7000), yon=-20,
+        dict(hid=1, ad="Araç-1", dost=False, tur="araç", baslangic=(1500, 7000), yon=-20,
              hiz=lambda t: 10.0, donus=lambda t: 0.0),
         # Dönüşlü rota: düz uçuş, sonra uzun bir sola dönüş
-        dict(hid=2, ad="İHA-1", dost=False, baslangic=(8800, 2000), yon=110,
+        dict(hid=2, ad="İHA-1", dost=False, tur="iha", baslangic=(8800, 2000), yon=110,
              hiz=lambda t: 22.0,
              donus=lambda t: 1.5 if 60 <= t < 150 else (-1.0 if 210 <= t < 250 else 0.0)),
         # Yavaş hareket eden insan grubu, hafif kıvrımlı
-        dict(hid=3, ad="İnsan Grubu", dost=False, baslangic=(4600, 3600), yon=70,
-             hiz=lambda t: 1.5, donus=lambda t: 0.3 * np.sin(t / 30.0)),
+        dict(hid=3, ad="İnsan Grubu", dost=False, tur="insan_grubu", baslangic=(4600, 3600), yon=70,
+             hiz=lambda t: INSAN_GRUBU_HIZI, donus=lambda t: 0.3 * np.sin(t / 30.0)),
         # Hız değiştiren dost araç
-        dict(hid=4, ad="Dost Araç", dost=True, baslangic=(1000, 1500), yon=35,
+        dict(hid=4, ad="Dost Araç", dost=True, tur="araç", baslangic=(1000, 1500), yon=35,
              hiz=lambda t: _yumusak_gecis(t, 90, 110, 8.0, 16.0) if t < 190
              else _yumusak_gecis(t, 190, 210, 16.0, 5.0),
              donus=lambda t: 0.0),
         # Dönüşlü ve hız değiştiren dost İHA
-        dict(hid=5, ad="Dost İHA", dost=True, baslangic=(9200, 8800), yon=200,
+        dict(hid=5, ad="Dost İHA", dost=True, tur="iha", baslangic=(9200, 8800), yon=200,
              hiz=lambda t: _yumusak_gecis(t, 150, 170, 18.0, 12.0),
              donus=lambda t: 2.0 if 120 <= t < 150 else 0.0),
     ]
     hedefler = []
     for d in tanimlar:
         zaman, konum = _rota_uret(np.array(d["baslangic"], float), d["yon"], d["hiz"], d["donus"])
-        hedefler.append(Hedef(d["hid"], d["ad"], d["dost"], zaman, konum))
+        hedefler.append(Hedef(d["hid"], d["ad"], d["dost"], zaman, konum, KRITIK_BOYUT[d["tur"]]))
     return hedefler

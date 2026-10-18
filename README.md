@@ -59,20 +59,42 @@ Figür seed=42 örnek koşusundandır; istatistikler için [Sonuçlar](#sonuçla
 |---|---|---|
 | Araç-1 | diğer | düz, sabit 10 m/s |
 | İHA-1 | diğer | 22 m/s, uzun sola dönüş ve ardından sağa kırılma |
-| İnsan Grubu | diğer | 1.5 m/s, hafif kıvrımlı |
+| İnsan Grubu | diğer | 1.15 m/s, hafif kıvrımlı (yaya grubu hızı: Moussaïd ve ark. [9]) |
 | Dost Araç | **dost** | düz, hız değiştiren (8 → 16 → 5 m/s) |
 | Dost İHA | **dost** | 18 m/s, 60° dönüş, ardından yavaşlama |
 
 | Sensör | Konum / menzil | Gürültü (1σ) | Hız | Gecikme | Özel durum |
 |---|---|---|---|---|---|
-| Radar | (4, 4) km, 8 km | 12 m + 2 m/km | 1 Hz | 0.6-0.7 s | %90 tespit, tarama başına ~0.5 yanlış alarm |
-| EO/termal kamera | (5.5, 5) km, 3.5 km | 3 m + 4 m/km | 5 Hz | 0.3-0.35 s | sis: menzil x0.65, gürültü x3, tespit %50 |
+| Radar | (4, 4) km, 8 km | 12 m + 2 m/km | 1 Hz | 0.6-0.7 s | %90 tespit, tarama başına ~0.5 yanlış alarm; karıştırmada etki hedefin yönüne ve menziline bağlı (aşağıda) |
+| EO/termal kamera | (5.5, 5) km, 3.5 km | 3 m + 4 m/km | 5 Hz | 0.3-0.35 s | tespit olasılığı hedef boyutu ve mesafeyle düşer (Johnson); sis: menzil x0.65, gürültü x3, tespit x0.5 |
 | Konum bildirimi | sadece dostlar | 3 m | 0.5 Hz | 1.5-1.7 s | sabit bias (35, -20) m, kimlik taşır |
 
 Sensörler aynı anda ölçmez (her birinin farklı bir faz kayması vardır). Her
 ölçüm, sensörün beyan ettiği nominal gürültü kovaryansını taşır. Sis veya
 karıştırma bu beyanı değiştirmez; bozulmayı füzyon merkezinin kendisi fark
 etmek zorundadır.
+
+**Kamera tespit modeli (Johnson kriterleri [10]).** Bir hedefin %50 olasılıkla
+tespiti için kritik boyutu boyunca 1 çizgi çifti (~2 piksel) gerekir. Tespit
+olasılığı P = x^E / (1 + x^E), E = 2.7 + 0.7x ile hesaplanır; x, hedefin
+görüntüde kapladığı çizgi çifti sayısının bu eşiğe oranıdır. Kamera 1280 piksel
+ve 10° yatay görüş açılı varsayılır. Kritik boyutlar: araç 2.3 m (NATO standart
+araç hedefi), insan grubu 1.6 m, İHA 0.5 m. Bu yüzden kamera aracı 3.5 km'de
+%98, İHA'yı 2 km'de %43 olasılıkla tespit eder. 3.5 km kameranın kapsama sınırı
+olarak kalır.
+
+**Radar karıştırma modeli (stand-off gürültü karıştırıcısı [11]).**
+Karıştırıcı (7, 6.5) km'de, hedeflerden ayrı durur ve radarın gürültü tabanını
+yükseltir.
+- **Yöne bağlı:** Karıştırma/gürültü oranı (JNR) radarın karıştırıcıya bakan
+  anten kazancına bağlıdır. Ana lobda 42 dB (2° hüzme, Gauss yaklaşımı), yan
+  loblarda 30 dB daha düşük.
+- **Menzile bağlı:** Hedefin SNR'ı radar denklemine göre menzilin 4. kuvvetiyle
+  düşer (8 km'de 13 dB). Tespit olasılığı SINR'dan North yaklaşımıyla [12]
+  hesaplanır; radara yakın hedefler karıştırmaya rağmen görülür (burn-through).
+- **Ölçüm hatası:** √(1 + JNR) kat büyür; yan lobda ×4.1.
+- **Sahte tespitler:** Karıştırıcı *yönündeki* gürültü şeridinde, rastgele
+  menzillerde, tarama başına ortalama 6 sahte tespit oluşur.
 
 ## Yöntem
 
@@ -176,7 +198,9 @@ demektir. Süre, örnek koşuda her senaryo için ekrana yazdırılır.
 ona verdiği güven 0.15'e düşmüş. Yanlış alarmlar (turuncu noktalar) haritada
 görünüyor ama sahte ize dönüşmüyor. Tablodaki "güven ağırlıklandırma kapalı"
 satırına göre aynı koşuda güven mekanizması kapatılınca 7 sahte iz oluşuyor;
-satıra tıklanınca bu izler haritada görülebilir.*
+satıra tıklanınca bu izler haritada görülebilir. (Ekran görüntüsü önceki
+karıştırma modelinden alınmıştır; yeni modelde sahte tespitler karıştırıcı
+yönündeki şeritte oluşur.)*
 
 ```bash
 python web.py              # tarayıcıda http://localhost:8000 açılır (Ctrl+C ile durur)
@@ -228,8 +252,9 @@ Tabloyu okurken:
   radar" satırı "normal / sadece radar" ile, "karistirma / sadece kamera"
   satırı da "normal / sadece kamera" ile pratikte aynıdır.
 - Konum bildirimi sadece dost birlikleri gördüğünden, beş hedeften üçünü hiç
-  göremez. Kaçırma oranının alt sınırı bu yüzden %60'tır. Kameranın ~%34'lük
-  kaçırması da menzil dışında kalan hedeflerden gelir.
+  göremez. Kaçırma oranının alt sınırı bu yüzden %60'tır. Kameranın ~%35'lik
+  kaçırması menzil dışında kalan hedeflerden ve uzaktaki küçük hedeflerin (İHA)
+  düşük tespit olasılığından gelir.
 - Radar ve kamera kimlik bilgisi taşımaz; bu sensörlerin izleri hep "diğer"
   etiketlidir. Etiket doğrulukları, gördükleri hedefler arasındaki dost
   olmayanların payıdır (radar: 3/5 = %60). Konum bildirimi sadece dostları
@@ -237,40 +262,40 @@ Tabloyu okurken:
 
 | Senaryo | Konfigürasyon | RMSE (m) | GOSPA (m) | Kaçırma (%) | Yanlış iz | ID switch | Etiket doğruluğu (%) |
 |---|---|---:|---:|---:|---:|---:|---:|
-| normal | Sadece radar | 14.8 ± 0.6 | 36.9 ± 1.4 | 1.5 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 60.0 ± 0.1 |
-| normal | Sadece kamera | 6.4 ± 0.2 | 197.3 ± 0.2 | 33.8 ± 0.0 | 0.0 ± 0.0 | 0.0 ± 0.0 | 70.7 ± 0.0 |
-| normal | Sadece konum bildirimi | 40.2 ± 0.1 | 313.4 ± 0.6 | 61.0 ± 0.3 | 0.0 ± 0.0 | 0.2 ± 0.4 | 100.0 ± 0.0 |
-| normal | Füzyon (güven ağırlıklandırma kapalı) | 8.4 ± 0.5 | 20.8 ± 0.9 | 1.1 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 100.0 ± 0.0 |
-| normal | **Füzyon** | 8.4 ± 0.5 | 20.8 ± 0.9 | 1.1 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 100.0 ± 0.0 |
-| sis | Sadece radar | 14.8 ± 0.6 | 36.9 ± 1.4 | 1.5 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 60.0 ± 0.1 |
-| sis | Sadece kamera | 16.0 ± 2.4 | 317.4 ± 2.2 | 65.0 ± 0.2 | 0.2 ± 0.5 | 1.3 ± 0.8 | 83.2 ± 0.2 |
-| sis | Sadece konum bildirimi | 40.2 ± 0.2 | 313.5 ± 0.6 | 61.0 ± 0.3 | 0.0 ± 0.0 | 0.3 ± 0.5 | 100.0 ± 0.0 |
-| sis | Füzyon (güven ağırlıklandırma kapalı) | 14.8 ± 1.6 | 45.1 ± 7.5 | 1.2 ± 0.1 | 2.4 ± 1.8 | 2.5 ± 2.4 | 100.0 ± 0.0 |
-| sis | **Füzyon** | 12.4 ± 0.7 | 30.3 ± 1.4 | 1.1 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 100.0 ± 0.0 |
-| karistirma | Sadece radar | 41.3 ± 4.6 | 109.4 ± 19.6 | 8.7 ± 4.8 | 0.0 ± 0.0 | 2.9 ± 1.7 | 59.5 ± 2.1 |
-| karistirma | Sadece kamera | 6.4 ± 0.3 | 197.3 ± 0.2 | 33.9 ± 0.0 | 0.0 ± 0.0 | 0.0 ± 0.0 | 70.7 ± 0.0 |
-| karistirma | Sadece konum bildirimi | 40.3 ± 0.2 | 313.5 ± 0.5 | 61.0 ± 0.2 | 0.0 ± 0.0 | 0.4 ± 0.5 | 100.0 ± 0.0 |
-| karistirma | Füzyon (güven ağırlıklandırma kapalı) | 10.3 ± 1.8 | 52.5 ± 9.6 | 1.3 ± 0.3 | 7.7 ± 2.4 | 1.0 ± 1.2 | 100.0 ± 0.0 |
-| karistirma | **Füzyon** | 8.8 ± 0.7 | 21.7 ± 1.0 | 1.1 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 100.0 ± 0.0 |
-| sensor_kaybi | Sadece radar | 14.4 ± 0.5 | 117.6 ± 1.2 | 23.8 ± 0.2 | 0.0 ± 0.0 | 5.0 ± 0.0 | 60.0 ± 0.1 |
-| sensor_kaybi | Sadece kamera | 7.5 ± 0.4 | 274.5 ± 0.1 | 56.5 ± 0.0 | 0.0 ± 0.0 | 4.0 ± 0.0 | 73.2 ± 0.0 |
-| sensor_kaybi | Sadece konum bildirimi | 40.2 ± 0.3 | 330.1 ± 0.5 | 68.9 ± 0.2 | 0.0 ± 0.0 | 2.2 ± 0.4 | 100.0 ± 0.0 |
-| sensor_kaybi | Füzyon (güven ağırlıklandırma kapalı) | 10.0 ± 0.5 | 41.2 ± 0.9 | 4.6 ± 0.1 | 0.0 ± 0.0 | 3.0 ± 0.0 | 100.0 ± 0.0 |
-| sensor_kaybi | **Füzyon** | 10.0 ± 0.5 | 41.2 ± 0.9 | 4.6 ± 0.1 | 0.0 ± 0.0 | 3.0 ± 0.0 | 100.0 ± 0.0 |
+| normal | Sadece radar | 19.5 ± 0.6 | 47.4 ± 1.6 | 1.5 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 60.0 ± 0.1 |
+| normal | Sadece kamera | 11.2 ± 0.8 | 204.4 ± 2.8 | 34.9 ± 0.6 | 0.0 ± 0.0 | 0.6 ± 0.7 | 70.8 ± 0.4 |
+| normal | Sadece konum bildirimi | 40.7 ± 0.2 | 313.3 ± 0.2 | 60.8 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 100.0 ± 0.0 |
+| normal | Füzyon (güven ağırlıklandırma kapalı) | 12.0 ± 0.6 | 28.0 ± 1.0 | 1.1 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 100.0 ± 0.0 |
+| normal | **Füzyon** | 12.0 ± 0.6 | 28.0 ± 1.0 | 1.1 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 100.0 ± 0.0 |
+| sis | Sadece radar | 19.5 ± 0.6 | 47.4 ± 1.6 | 1.5 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 60.0 ± 0.1 |
+| sis | Sadece kamera | 25.5 ± 3.3 | 322.9 ± 2.5 | 67.0 ± 1.0 | 0.1 ± 0.3 | 1.0 ± 0.7 | 84.4 ± 1.5 |
+| sis | Sadece konum bildirimi | 40.7 ± 0.2 | 313.3 ± 0.2 | 60.8 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.2 | 100.0 ± 0.0 |
+| sis | Füzyon (güven ağırlıklandırma kapalı) | 20.0 ± 2.8 | 53.0 ± 10.1 | 1.3 ± 0.3 | 1.7 ± 1.5 | 2.7 ± 3.1 | 100.0 ± 0.0 |
+| sis | **Füzyon** | 15.2 ± 0.6 | 36.4 ± 1.4 | 1.1 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.0 | 100.0 ± 0.0 |
+| karistirma | Sadece radar | 61.0 ± 3.9 | 156.2 ± 7.5 | 13.3 ± 1.7 | 0.3 ± 0.5 | 3.4 ± 1.2 | 65.1 ± 1.2 |
+| karistirma | Sadece kamera | 11.2 ± 0.8 | 203.9 ± 1.7 | 34.8 ± 0.4 | 0.0 ± 0.0 | 0.5 ± 0.7 | 70.8 ± 0.3 |
+| karistirma | Sadece konum bildirimi | 40.6 ± 0.2 | 313.3 ± 0.3 | 60.8 ± 0.1 | 0.0 ± 0.0 | 0.0 ± 0.2 | 100.0 ± 0.0 |
+| karistirma | Füzyon (güven ağırlıklandırma kapalı) | 20.4 ± 4.5 | 165.8 ± 11.1 | 1.5 ± 0.4 | 43.9 ± 4.1 | 2.0 ± 1.5 | 100.0 ± 0.0 |
+| karistirma | **Füzyon** | 14.5 ± 1.4 | 32.6 ± 5.5 | 1.1 ± 0.1 | 0.1 ± 0.3 | 0.0 ± 0.0 | 100.0 ± 0.0 |
+| sensor_kaybi | Sadece radar | 20.0 ± 0.7 | 127.1 ± 1.4 | 23.8 ± 0.2 | 0.0 ± 0.0 | 5.0 ± 0.0 | 60.0 ± 0.1 |
+| sensor_kaybi | Sadece kamera | 11.9 ± 1.8 | 282.3 ± 2.8 | 58.0 ± 0.6 | 0.0 ± 0.0 | 4.3 ± 0.7 | 73.7 ± 0.8 |
+| sensor_kaybi | Sadece konum bildirimi | 40.7 ± 0.2 | 330.1 ± 0.4 | 68.9 ± 0.2 | 0.0 ± 0.0 | 2.0 ± 0.0 | 100.0 ± 0.0 |
+| sensor_kaybi | Füzyon (güven ağırlıklandırma kapalı) | 14.0 ± 0.6 | 49.0 ± 1.3 | 4.6 ± 0.1 | 0.0 ± 0.0 | 3.0 ± 0.0 | 100.0 ± 0.0 |
+| sensor_kaybi | **Füzyon** | 14.0 ± 0.6 | 49.0 ± 1.3 | 4.6 ± 0.1 | 0.0 ± 0.0 | 3.0 ± 0.0 | 100.0 ± 0.0 |
 
 | Senaryo | Füzyonun en iyi tek sensörden düşük olduğu koşu: RMSE | GOSPA |
 |---|---:|---:|
-| normal | 0/30 | 30/30 |
+| normal | 4/30 | 30/30 |
 | sis | 30/30 | 30/30 |
 | karistirma | 0/30 | 30/30 |
-| sensor_kaybi | 0/30 | 30/30 |
+| sensor_kaybi | 3/30 | 30/30 |
 
 | Senaryo | Bias kestirimi x (m) | Bias kestirimi y (m) | Kestirim hatası (m) |
 |---|---:|---:|---:|
-| normal | 36.1 ± 2.5 | -19.9 ± 2.3 | 3.2 ± 1.6 |
-| sis | 36.0 ± 2.4 | -19.7 ± 2.4 | 3.1 ± 1.7 |
-| karistirma | 36.0 ± 2.5 | -19.9 ± 2.5 | 3.2 ± 1.7 |
-| sensor_kaybi | 36.0 ± 2.4 | -19.9 ± 2.5 | 3.1 ± 1.7 |
+| normal | 36.2 ± 2.5 | -20.6 ± 2.4 | 3.1 ± 2.0 |
+| sis | 36.2 ± 2.7 | -20.5 ± 2.4 | 3.3 ± 1.8 |
+| karistirma | 36.0 ± 2.7 | -20.4 ± 2.3 | 3.2 ± 1.8 |
+| sensor_kaybi | 36.3 ± 2.6 | -20.5 ± 2.3 | 3.2 ± 1.8 |
 
 ![Karşılaştırma](results/karsilastirma.png)
 
@@ -278,15 +303,15 @@ Tabloyu okurken:
 
 - **Genel başarım (GOSPA):** Füzyon **dört senaryonun hepsinde, 30 koşunun
   30'unda** en iyi tek sensörden daha düşük GOSPA veriyor. Normal senaryoda
-  füzyon 20.8 ± 0.9 m; en iyi tek sensör radar 36.9 ± 1.4 m, kamera
-  197.3 ± 0.2 m.
+  füzyon 28.0 ± 1.0 m; en iyi tek sensör radar 47.4 ± 1.6 m, kamera
+  204.4 ± 2.8 m.
 - **RMSE ve kamera:** Sadece eşleşen izlere bakan RMSE'de, sis dışındaki
-  senaryolarda kamera füzyondan daha düşük çıkıyor (ör. normal: 6.4 ve 8.4 m).
-  Bunun sebebi kameranın hedeflerin %34-57'sini hiç görmemesi; RMSE'si sadece
-  menzili içindeki yakın hedeflerden hesaplanıyor. Kaçırılan hedefleri de
-  cezalandıran GOSPA bu yanılgıyı ortadan kaldırıyor (kamera 197 m, füzyon
-  21 m). Sis senaryosunda füzyon RMSE'de de 30/30 koşuda en iyi tek sensörden
-  daha iyi (12.4 ± 0.7 m; radar 14.8 ± 0.6 m).
+  senaryolarda kamera füzyondan biraz daha düşük ya da ona yakın çıkıyor (ör.
+  normal: 11.2 ve 12.0 m). Bunun sebebi kameranın hedeflerin %35-58'ini hiç
+  görmemesi; RMSE'si sadece gördüğü yakın hedeflerden hesaplanıyor. Kaçırılan
+  hedefleri de cezalandıran GOSPA bu yanılgıyı ortadan kaldırıyor (kamera
+  204 m, füzyon 28 m). Sis senaryosunda füzyon RMSE'de de 30/30 koşuda en iyi
+  tek sensörden daha iyi (15.2 ± 0.6 m; radar 19.5 ± 0.6 m).
 - **Kapsama:** Füzyon her senaryoda en düşük kaçırma oranını veriyor
   (%1.1-4.6). Tek sensörlerde bu oran %1.5-69 arasında.
 - **Kimlik:** Füzyon, eşleşen izlerin **%100'ünde** dost/diğer etiketini doğru
@@ -294,30 +319,31 @@ Tabloyu okurken:
   sağlayamıyor: Radar her hedefi görüyor ama dostları ayırt edemiyor (%60).
   Konum bildirimi etiketi doğru veriyor ama dost olmayanları hiç görmüyor.
 - **Ablasyon, sensör güveninin değeri:** Güven ağırlıklandırma kapatılınca
-  karıştırma senaryosunda ortalama **7.7 ± 2.4 sahte iz** oluşuyor ve GOSPA
-  21.7'den 52.5 m'ye çıkıyor (RMSE 8.8 → 10.3 m). Sis senaryosunda 2.4 sahte iz,
-  2.5 ID switch ve 30.3 → 45.1 m GOSPA artışı görülüyor. Normal ve sensör kaybı
-  senaryolarında iki satır aynı; bu beklenen bir sonuç, çünkü bozulmuş bir
-  sensör yokken güven zaten 1'de kalıyor. Bu sonuç hem yanlış iz ölçütünün
-  çalıştığını hem de iyileşmenin NIS mekanizmasından geldiğini gösteriyor.
+  karıştırma senaryosunda ortalama **43.9 ± 4.1 sahte iz** oluşuyor ve GOSPA
+  32.6'dan 165.8 m'ye çıkıyor (RMSE 14.5 → 20.4 m). Güven açıkken sahte iz
+  sayısı 0.1 ± 0.3 (30 koşunun çoğunda sıfır). Sis senaryosunda güven
+  kapatılınca 1.7 sahte iz, 2.7 ID switch ve 36.4 → 53.0 m GOSPA artışı
+  görülüyor. Normal ve sensör kaybı senaryolarında iki satır aynı; bu beklenen
+  bir sonuç, çünkü bozulmuş bir sensör yokken güven zaten 1'de kalıyor.
 - **Bias düzeltme:** Konum bildirimindeki (35, -20) m sapma, 30 koşu üzerinden
-  (36.0 ± 2.5, -19.9 ± 2.4) m olarak kestiriliyor; kestirim hatası
-  3.2 ± 1.6 m (dört senaryoda da aynı). Düzeltilmemiş konum bildiriminin
-  hatası ise ~40 m. x bileşeninde küçük bir sistematik sapma olabilir:
-  Ortalamanın standart hatası ~0.5 m iken 42-71 kümesinde fark +1.1 m
-  (~2.3 standart hata). Bağımsız 100-129 kümesinde ise kestirim 35.2 m ve fark
-  belirgin değil; 60 koşunun birleşik ortalaması 35.6 ± 0.3 m. Olası kaynak,
-  bias'ın radar/kamera izlerine göre kestirilmesi ve bu izlerin kendi
-  hatalarının (ör. manevrada izin hedefin gerisinde kalması) kestirime
-  sızmasıdır. Etkisi, tek koşudaki kestirim belirsizliğinin (~2.5 m) yanında
-  küçüktür.
-- **Karıştırma:** Radarın güveni karıştırma süresince ~0.1'e düşüyor. Radarın
-  tek başına GOSPA'sı 109 m'ye, RMSE'si 41 m'ye çıkarken füzyon 21.7 m GOSPA ve
-  8.8 m RMSE'de kalıyor.
+  (36.2 ± 2.5, -20.6 ± 2.4) m olarak kestiriliyor; kestirim hatası
+  3.1 ± 2.0 m (dört senaryoda benzer). Düzeltilmemiş konum bildiriminin hatası
+  ise ~40 m. x bileşeninde küçük bir sistematik sapma olabilir: Ortalamanın
+  standart hatası ~0.5 m iken 42-71 kümesinde fark +1.2 m. Bağımsız 100-129
+  kümesinde kestirim 35.4 m ve fark belirgin değil; 60 koşunun birleşik
+  ortalaması ~35.8 m. Olası kaynak, bias'ın radar/kamera izlerine göre
+  kestirilmesi ve bu izlerin kendi hatalarının (ör. manevrada izin hedefin
+  gerisinde kalması) kestirime sızmasıdır. Etkisi, tek koşudaki kestirim
+  belirsizliğinin (~2.5 m) yanında küçüktür.
+- **Karıştırma:** Radarın güveni karıştırma süresince ~0.17'ye düşüyor.
+  Karıştırıcı yönündeki hedefler radarda neredeyse hiç görülmüyor, yan
+  loblardaki hedeflerin ölçüm hatası ~4 kat büyüyor. Radarın tek başına
+  GOSPA'sı 156 m'ye, RMSE'si 61 m'ye çıkarken füzyon 32.6 m GOSPA ve 14.5 m
+  RMSE'de kalıyor.
 - **Sensör kaybı (zayıf nokta):** Radar ve kamera 150-170 s arasında aynı anda
   kapalı. Dost olmayan hedeflerin izleri 6 s sonra siliniyor ve sensörler geri
   gelince yeni ID ile başlıyor (her koşuda 3 ID switch). Füzyonun GOSPA'sı da
-  bu yüzden en yüksek bu senaryoda (41.2 m).
+  bu yüzden en yüksek bu senaryoda (49.0 m).
 
 ### Bağımsız doğrulama
 
@@ -328,21 +354,21 @@ tam tablo: [`results/dogrulama_seed100.md`](results/dogrulama_seed100.md)).
 
 | Senaryo | Füzyon GOSPA (m), seed 42-71 | Füzyon GOSPA (m), seed 100-129 | En iyi tek sensör GOSPA (m), seed 100-129 | Füzyon kazandı (GOSPA / RMSE), seed 100-129 |
 |---|---:|---:|---:|---:|
-| normal | 20.8 ± 0.9 | 20.5 ± 0.8 | 36.7 ± 1.4 (radar) | 30/30 · 0/30 |
-| sis | 30.3 ± 1.4 | 30.2 ± 1.5 | 36.7 ± 1.4 (radar) | 30/30 · 29/30 |
-| karistirma | 21.7 ± 1.0 | 21.5 ± 1.1 | 110.3 ± 19.0 (radar) | 30/30 · 0/30 |
-| sensor_kaybi | 41.2 ± 0.9 | 41.3 ± 1.0 | 117.4 ± 1.4 (radar) | 30/30 · 0/30 |
+| normal | 28.0 ± 1.0 | 27.7 ± 1.3 | 47.0 ± 1.6 (radar) | 30/30 · 6/30 |
+| sis | 36.4 ± 1.4 | 36.3 ± 1.3 | 47.0 ± 1.6 (radar) | 30/30 · 30/30 |
+| karistirma | 32.6 ± 5.5 | 31.7 ± 2.7 | 156.1 ± 6.8 (radar) | 30/30 · 0/30 |
+| sensor_kaybi | 49.0 ± 1.3 | 48.8 ± 1.2 | 126.8 ± 1.7 (radar) | 30/30 · 4/30 |
 
 Sonuçlar iki seed kümesinde pratikte aynı. Füzyonun koşu başına GOSPA ve
 RMSE değerleri iki küme arasında Mann-Whitney U testiyle karşılaştırıldı;
-hiçbir senaryoda anlamlı fark yok (GOSPA p = 0.15 / 0.97 / 0.47 / 0.88,
-RMSE p = 0.86 / 0.86 / 0.96 / 0.41; sırasıyla normal, sis, karıştırma, sensör
+hiçbir senaryoda anlamlı fark yok (GOSPA p = 0.23 / 0.77 / 0.30 / 0.67,
+RMSE p = 0.20 / 0.51 / 0.45 / 0.26; sırasıyla normal, sis, karıştırma, sensör
 kaybı). Anlamlı fark bulunmaması tek başına eşitliği kanıtlamaz, ama ortalamalar
-arasındaki fark (≤ 0.3 m GOSPA) koşular arası saçılmanın da altında. Füzyon
+arasındaki fark (≤ 0.9 m GOSPA) koşular arası saçılmanın da altında. Füzyon
 her senaryoda 30/30 koşuda en düşük GOSPA'yı veriyor. Ablasyondaki sahte iz
-sayısı (karıştırma: 7.9 ± 2.4) ve bias kestirim hatası (3.0 ± 1.6 m) da
-korunuyor. Etiket doğruluğu bu kümede de her senaryoda %100. Tek fark, sis senaryosunda RMSE kazanımının 30/30 yerine 29/30
-koşuda gerçekleşmesi. Yani bulgular ayarlamada kullanılan seed'e özgü değil.
+sayısı (karıştırma: 41.7 ± 4.7) ve bias kestirim hatası (2.6-2.8 m) da
+korunuyor. Etiket doğruluğu bu kümede de her senaryoda %100. Yani bulgular
+ayarlamada kullanılan seed'e özgü değil.
 
 ## Proje yapısı
 
@@ -373,8 +399,14 @@ Cok-Sensorlu-Veri-Fuzyonu/
   değerlendirme bu hizalanmış zamana göredir.
 - Sis 60. saniyeden itibaren, karıştırma 80-220 s, sensör kaybı radar
   100-170 s, kamera 150-230 s, konum bildirimi 200-260 s aralığında etkindir.
-- Karıştırmada yanlış alarmların %70'i karıştırıcı konumu (7, 6.5) km
-  çevresinde yoğunlaşır.
+- Karıştırıcı bir gürültü karıştırıcısıdır (aldatıcı değil). Gerçek radarlar
+  karıştırıcı yönündeki gürültü şeridini çoğu zaman uyarlamalı eşikle (CFAR)
+  bastırır; burada şeridin bir kısmının sahte tespite dönüştüğü varsayılır.
+- Kamera ve karıştırma modellerinin sayısal değerleri (kamera çözünürlüğü ve
+  görüş açısı, hedef kritik boyutları, JNR, hüzme genişliği, SNR) varsayımdır
+  ve [`src/saha.py`](src/saha.py) ile [`src/sensorler.py`](src/sensorler.py)
+  dosyalarının başında tanımlıdır. Karıştırma değerleri, yan loblardaki etki
+  önceki basit modele (gürültü ×4) yakın kalacak şekilde seçildi.
 
 ## Ayar parametreleri
 
@@ -407,8 +439,13 @@ Bu proje bir yöntem demosudur; sonuçlar aşağıdaki sınırlar içinde
 okunmalıdır:
 
 - **Sadece simülasyon:** Gerçek sensör verisi kullanılmaz. Sensör modelleri
-  (gürültü, tespit olasılığı, yanlış alarm) basitleştirilmiştir ve gerçek
-  sistemlerin karakteristiğini temsil ettiği iddia edilmez.
+  basitleştirilmiştir. Kamera tespiti (Johnson) ve karıştırma (radar denklemi)
+  literatürdeki modellere dayanır, ama sayısal parametreleri gerçek bir sistemden
+  ölçülmemiştir. Gerçek veriyle sınama planı:
+  [`docs/veri_seti_arastirmasi.md`](docs/veri_seti_arastirmasi.md).
+- **Kamera görüş açısı:** Kamera modeli 10° görüş açılı bir kameranın
+  çözünürlüğünü kullanır, ama kameranın 3.5 km içindeki her yönü aynı anda
+  gördüğü varsayılır (döner başlık ya da çoklu kamera).
 - **Sabit geometri:** Beş hedefin rotası ve sensörlerin yeri her koşuda aynıdır.
   Koşular arasında sadece gürültü, tespitler, yanlış alarmlar ve gecikmeler
   değişir. Sonuçların farklı saha düzenlerine genellenebilirliği test edilmedi.
@@ -430,6 +467,9 @@ okunmalıdır:
 
 - [x] **Manevralı hedefler için IMM filtre:** Tamamlandı (Sabit Hız + EKF Koordineli Dönüş modelleri arası etkileşimli geçiş, dinamik model olasılıkları taktik resme ve web arayüzüne eklendi).
 - Kutupsal (menzil-açı) radar ölçüm modeli ve EKF/UKF.
+- Aldatıcı karıştırma: İHA üzerindeki bir karıştırıcının radarın ölçtüğü
+  menzili hedeften yavaş yavaş uzaklaştırması (RGPO). Kamera hedefi doğru yerde
+  gördüğü için radar ile kamera çelişir; çelişki çözümü için zor bir test.
 - Gecikmeli ölçümleri pencere beklemeden işlemek için sırası bozuk ölçüm
   (OOSM) güncellemesi ile gerçek zamanlı çıktı.
 - Uzun sensör kesintilerinden sonra kimlik korumak için iz yeniden bağlama
@@ -466,6 +506,17 @@ okunmalıdır:
    Optimal Sub-Pattern Assignment Metric," *20th International Conference on
    Information Fusion (FUSION)*, Xi'an, Çin, 182-189, 2017.
    DOI: 10.23919/ICIF.2017.8009645
+9. M. Moussaïd, N. Perozo, S. Garnier, D. Helbing, G. Theraulaz, "The Walking
+   Behaviour of Pedestrian Social Groups and Its Impact on Crowd Dynamics,"
+   *PLoS ONE*, 5(4), e10047, 2010. DOI: 10.1371/journal.pone.0010047
+10. J. Johnson, "Analysis of Image Forming Systems," *Image Intensifier
+    Symposium*, U.S. Army Engineer Research and Development Laboratories,
+    Fort Belvoir, 1958. (NATO STANAG 4347 bu yönteme dayanır.)
+11. Naval Air Warfare Center Weapons Division, *Electronic Warfare and Radar
+    Systems Engineering Handbook*, NAWCWD TP 8347, 1999 (2013 güncellemesi).
+12. D. O. North, "An Analysis of the Factors Which Determine Signal/Noise
+    Discrimination in Pulsed-Carrier Systems," *Proceedings of the IEEE*,
+    51(7), 1016-1027, 1963 (1943 RCA raporunun yeniden basımı).
 
 ## Lisans
 
