@@ -19,3 +19,7 @@ results/dogrulama_seed*_*.*
 
 # GIF aracının (araclar/sahne3d_gif.py) farklı bir çıktı adıyla denemeleri
 results/sahne3d_*.gif
+
+# İndirilen gerçek veri setleri (büyük dosyalar; bkz. veri/README.md)
+veri/*
+!veri/README.md

@@ -8,6 +8,7 @@ yansımaz, füzyon merkezi bunu kendisi fark etmek zorundadır.
 """
 
 from dataclasses import dataclass
+from math import erfc, log, sqrt
 
 import numpy as np
 
@@ -24,6 +25,23 @@ SENARYOLAR = {
 }
 
 KARISTIRICI_KONUM = np.array([7000.0, 6500.0])  # karıştırma kaynağının yeri
+
+# Kamera tespit modeli (Johnson kriterleri). Bir hedefin %50 olasılıkla tespiti
+# için kritik boyutu boyunca 1 çizgi çifti (~2 piksel) gerekir. Kamera çözünürlüğü
+# ve görüş açısı varsayımdır (1280 piksel, 10° yatay görüş açısı).
+KAMERA_PIKSEL = 1280
+KAMERA_GORUS_ACISI = np.deg2rad(10.0)
+JOHNSON_N50_TESPIT = 1.0    # çizgi çifti
+
+# Radar karıştırma modeli: hedeflerden ayrı, sabit noktadaki gürültü karıştırıcısı
+# (stand-off). Karıştırma/gürültü oranı radarın karıştırıcıya bakan anten kazancına
+# bağlıdır; ana lob için Gauss yaklaşımı, yan loblar için sabit seviye kullanılır.
+RADAR_HUZME_GENISLIGI = np.deg2rad(2.0)   # 3 dB hüzme genişliği
+YAN_LOB_SEVIYESI_DB = -30.0                # ana loba göre (NAWCWD el kitabı: tipik >30 dB)
+JNR_ANA_LOB_DB = 42.0                      # karıştırıcı ana lobdayken karıştırma/gürültü oranı
+RADAR_SNR_MAKS_MENZIL_DB = 13.0            # karıştırmasız, en uzak menzildeki hedefin SNR'ı
+RADAR_PFA = 1e-6                           # yanlış alarm olasılığı (tespit eşiği)
+SERIT_YANLIS_ALARM = 6.0                   # karıştırıcı yönündeki şeritte tarama başına yanlış tespit
 
 
 @dataclass
@@ -83,13 +101,72 @@ def sensor_durumu(senaryo, ad, t):
         # Sis: görüş mesafesi kısalır, gürültü artar, hedefler kaçırılır
         durum.update(menzil=s.menzil * 0.65, gurultu_carpani=3.0, pd=0.5)
     if ad == "radar" and _icinde(t, olay.get("karistirma")):
-        # Karıştırma: gürültü artar, tespit düşer, yoğun yanlış alarm oluşur
-        durum.update(gurultu_carpani=4.0, pd=0.7, yanlis_alarm=8.0, karistirma=True)
+        # Karıştırma: etkisi hedefin yönüne ve menziline bağlıdır (karistirma_etkisi)
+        durum["karistirma"] = True
     return durum
 
 
 def _sigma(s, mesafe):
     return s.sigma_sabit + s.sigma_oran * mesafe
+
+
+def johnson_tespit_olasiligi(kritik_boyut, mesafe):
+    """Hedef aktarım olasılık fonksiyonu: P = x^E / (1 + x^E), E = 2.7 + 0.7x.
+
+    x, hedefin kritik boyutu boyunca düşen çizgi çifti sayısının tespit için
+    gereken sayıya (N50) oranıdır.
+    """
+    if mesafe <= 0:
+        return 1.0
+    piksel_acisi = KAMERA_GORUS_ACISI / KAMERA_PIKSEL
+    cizgi_cifti = kritik_boyut / (mesafe * piksel_acisi) / 2.0
+    x = cizgi_cifti / JOHNSON_N50_TESPIT
+    e = 2.7 + 0.7 * x
+    return x ** e / (1.0 + x ** e)
+
+
+def _north_pd(snr_db):
+    """Sabit genlikli hedef için North yaklaşımı: Pd = 0.5 erfc(√(-ln Pfa) - √(SNR + 0.5))."""
+    snr = 10 ** (snr_db / 10)
+    return 0.5 * erfc(sqrt(-log(RADAR_PFA)) - sqrt(snr + 0.5))
+
+
+def _aci_farki(a, b):
+    return abs((a - b + np.pi) % (2 * np.pi) - np.pi)
+
+
+def _jnr(s, aci):
+    """Radar aci yönüne bakarken karıştırıcıdan aldığı karıştırma/gürültü oranı (doğrusal)."""
+    fark = _aci_farki(aci, _yon(s.konum, KARISTIRICI_KONUM))
+    kazanc_db = max(-12.0 * (fark / RADAR_HUZME_GENISLIGI) ** 2, YAN_LOB_SEVIYESI_DB)
+    return 10 ** ((JNR_ANA_LOB_DB + kazanc_db) / 10)
+
+
+def _yon(a, b):
+    d = b - a
+    return np.arctan2(d[1], d[0])
+
+
+def karistirma_etkisi(s, p):
+    """p konumundaki hedef için (tespit olasılığı çarpanı, gürültü çarpanı).
+
+    Karıştırma gürültü tabanını (1 + JNR) kat yükseltir; hedefin SINR'ı o kadar
+    düşer. Hedefin SNR'ı radar denklemine göre menzilin 4. kuvvetiyle azaldığından
+    radara yakın hedefler karıştırmaya rağmen görülür (burn-through). Ölçüm
+    hatası SNR'ın kareköküyle ters orantılı büyür.
+    """
+    mesafe = max(np.linalg.norm(p - s.konum), 1.0)
+    jnr = _jnr(s, _yon(s.konum, p))
+    snr_db = RADAR_SNR_MAKS_MENZIL_DB + 40 * np.log10(s.menzil / mesafe)
+    sinr_db = snr_db - 10 * np.log10(1 + jnr)
+    return _north_pd(sinr_db) / _north_pd(snr_db), sqrt(1 + jnr)
+
+
+def _serit_yanlis_alarmi(s, rng):
+    """Karıştırıcı yönünde, rastgele menzilde bir yanlış tespit (gürültü şeridi)."""
+    aci = _yon(s.konum, KARISTIRICI_KONUM) + rng.normal(0, RADAR_HUZME_GENISLIGI / 2)
+    menzil = rng.uniform(0, s.menzil)
+    return s.konum + menzil * np.array([np.cos(aci), np.sin(aci)])
 
 
 def olcumleri_uret(hedefler, senaryo, rng):
@@ -109,21 +186,26 @@ def olcumleri_uret(hedefler, senaryo, rng):
                     continue
                 p = h.konum_at(t)
                 mesafe = 0.0 if s.sadece_dost else np.linalg.norm(p - s.konum)
-                if mesafe > d["menzil"] or rng.random() > d["pd"]:
+                pd, gurultu = d["pd"], d["gurultu_carpani"]
+                if ad == "kamera":
+                    pd *= johnson_tespit_olasiligi(h.kritik_boyut, mesafe)
+                if d["karistirma"]:
+                    pd_carpani, gurultu = karistirma_etkisi(s, p)
+                    pd *= pd_carpani
+                if mesafe > d["menzil"] or rng.random() > pd:
                     continue
                 sigma_nom = _sigma(s, mesafe)
-                z = p + np.array(s.bias) + rng.normal(0, sigma_nom * d["gurultu_carpani"], 2)
+                z = p + np.array(s.bias) + rng.normal(0, sigma_nom * gurultu, 2)
                 liste.append(Olcum(ad, t, t + gecikme, z, np.eye(2) * sigma_nom ** 2,
                                    etiket=h.hid if s.sadece_dost else None, kaynak=h.hid))
 
-            # Yanlış alarmlar
-            for _ in range(rng.poisson(d["yanlis_alarm"])):
-                if d["karistirma"] and rng.random() < 0.7:
-                    z = KARISTIRICI_KONUM + rng.normal(0, 1200.0, 2)
-                else:
-                    z = rng.uniform(0, SAHA_BOYUTU, 2)
+            # Yanlış alarmlar: sahaya rastgele dağılan arka plan ve karıştırma şeridi
+            yanlislar = [rng.uniform(0, SAHA_BOYUTU, 2) for _ in range(rng.poisson(d["yanlis_alarm"]))]
+            if d["karistirma"]:
+                yanlislar += [_serit_yanlis_alarmi(s, rng) for _ in range(rng.poisson(SERIT_YANLIS_ALARM))]
+            for z in yanlislar:
                 mesafe = np.linalg.norm(z - s.konum)
-                if mesafe > d["menzil"]:
+                if mesafe > d["menzil"] or not np.all((0 <= z) & (z <= SAHA_BOYUTU)):
                     continue
                 liste.append(Olcum(ad, t, t + gecikme, z, np.eye(2) * _sigma(s, mesafe) ** 2))
         sonuc[ad] = liste
